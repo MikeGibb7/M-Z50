@@ -2,7 +2,9 @@ import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
-    
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
+
 def calculate_return(stock, years):
     end_date = datetime.today()
     start_date = end_date - timedelta(days=365 * years)
@@ -84,4 +86,10 @@ def main():
 
 
 if __name__ == "__main__":
+    # For more aggressive parallelization (if your system can handle it)
+    mz50 = MZ50Index(initial_capital=100000, max_workers=20)
+
+    # For more conservative approach
+    mz50 = MZ50Index(initial_capital=100000, max_workers=5)
+
     main()

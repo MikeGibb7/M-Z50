@@ -4,16 +4,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 warnings.filterwarnings('ignore')
 
 class MZ50Index:
-    def __init__(self, initial_capital=100000):
+    def __init__(self, initial_capital=100000, max_workers=10):
         self.initial_capital = initial_capital
+        self.max_workers = max_workers
         self.sp500_data = self._get_sp500_data()
         self.portfolio_value = initial_capital
         self.portfolio_history = []
         self.spy_history = []
         self.rebalance_dates = []
+        self.lock = threading.Lock()
         
     def _get_sp500_data(self):
         """Fetch S&P 500 data from Wikipedia using pandas"""
@@ -98,33 +102,53 @@ class MZ50Index:
         except:
             return None
     
+    def process_industry(self, industry, tickers, date):
+        """Process a single industry to find the best stock"""
+        industry_stocks = []
+        
+        for ticker in tickers:
+            data = self.get_fundamental_data(ticker, date)
+            if data and data['pe_ratio'] != float('inf') and data['debt_to_equity'] != float('inf'):
+                industry_stocks.append(data)
+        
+        if industry_stocks:
+            # Sort by criteria: low P/E, high ROE, low Debt/Equity
+            industry_stocks.sort(key=lambda x: (
+                x['pe_ratio'],  # Lower is better
+                -x['roe'],      # Higher is better (negative for ascending sort)
+                x['debt_to_equity']  # Lower is better
+            ))
+            
+            # Select the best stock from this industry
+            best_stock = industry_stocks[0]
+            
+            with self.lock:
+                print(f"  {industry}: {best_stock['ticker']} (P/E: {best_stock['pe_ratio']:.2f}, ROE: {best_stock['roe']:.2%}, D/E: {best_stock['debt_to_equity']:.2f})")
+            
+            return industry, best_stock
+        
+        return industry, None
+    
     def screen_stocks(self, date):
-        """Screen stocks based on fundamentals"""
+        """Screen stocks based on fundamentals using multithreading"""
         print(f"Screening stocks for {date.strftime('%Y-%m-%d')}...")
         
         industry_mapping = self.get_industry_mapping()
         screened_stocks = {}
         
-        for industry, tickers in industry_mapping.items():
-            industry_stocks = []
+        # Use ThreadPoolExecutor to process industries in parallel
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            # Submit all industry processing tasks
+            future_to_industry = {
+                executor.submit(self.process_industry, industry, tickers, date): industry
+                for industry, tickers in industry_mapping.items()
+            }
             
-            for ticker in tickers:
-                data = self.get_fundamental_data(ticker, date)
-                if data and data['pe_ratio'] != float('inf') and data['debt_to_equity'] != float('inf'):
-                    industry_stocks.append(data)
-            
-            if industry_stocks:
-                # Sort by criteria: low P/E, high ROE, low Debt/Equity
-                industry_stocks.sort(key=lambda x: (
-                    x['pe_ratio'],  # Lower is better
-                    -x['roe'],      # Higher is better (negative for ascending sort)
-                    x['debt_to_equity']  # Lower is better
-                ))
-                
-                # Select the best stock from this industry
-                best_stock = industry_stocks[0]
-                screened_stocks[industry] = best_stock
-                print(f"  {industry}: {best_stock['ticker']} (P/E: {best_stock['pe_ratio']:.2f}, ROE: {best_stock['roe']:.2%}, D/E: {best_stock['debt_to_equity']:.2f})")
+            # Collect results as they complete
+            for future in as_completed(future_to_industry):
+                industry, best_stock = future.result()
+                if best_stock:
+                    screened_stocks[industry] = best_stock
         
         return screened_stocks
     
@@ -137,37 +161,6 @@ class MZ50Index:
             weights[industry] = stock['market_cap'] / total_market_cap
         
         return weights
-    
-    def rebalance_portfolio(self, date):
-        """Rebalance the portfolio"""
-        print(f"\nRebalancing portfolio on {date.strftime('%Y-%m-%d')}...")
-        
-        # Screen stocks
-        selected_stocks = self.screen_stocks(date)
-        
-        if not selected_stocks:
-            print("No stocks passed screening criteria")
-            return
-        
-        # Calculate weights
-        weights = self.calculate_weights(selected_stocks)
-        
-        # Calculate allocation amounts
-        allocations = {}
-        for industry, weight in weights.items():
-            allocations[industry] = {
-                'ticker': selected_stocks[industry]['ticker'],
-                'weight': weight,
-                'amount': self.portfolio_value * weight,
-                'shares': int((self.portfolio_value * weight) / selected_stocks[industry]['price'])
-            }
-        
-        # Print allocation
-        print("\nPortfolio Allocation:")
-        for industry, alloc in allocations.items():
-            print(f"  {industry}: {alloc['ticker']} - {alloc['weight']:.2%} (${alloc['amount']:,.0f})")
-        
-        return allocations
     
     def calculate_portfolio_value(self, allocations, date):
         """Calculate current portfolio value"""
@@ -202,22 +195,88 @@ class MZ50Index:
         return None
     
     def run_backtest(self, start_date, end_date):
-        """Run the backtest"""
+        """Run the backtest with multithreaded quarterly processing"""
         print(f"Running M&Z50 backtest from {start_date.strftime('%Y-%m-%d')} to {end_date.strftime('%Y-%m-%d')}")
+        
+        # Generate all quarterly rebalancing dates
+        rebalance_dates = []
+        current_date = start_date
+        while current_date <= end_date:
+            if current_date.month in [1, 4, 7, 10] and current_date.day == 1:
+                rebalance_dates.append(current_date)
+            current_date += timedelta(days=32)
+            current_date = current_date.replace(day=1)
+        
+        print(f"Found {len(rebalance_dates)} quarterly rebalancing periods")
+        
+        # Process each quarter in parallel
+        quarterly_results = {}
+        
+        with ThreadPoolExecutor(max_workers=min(self.max_workers, len(rebalance_dates))) as executor:
+            # Submit all quarterly processing tasks
+            future_to_date = {
+                executor.submit(self.process_quarter, date): date
+                for date in rebalance_dates
+            }
+            
+            # Collect results as they complete
+            for future in as_completed(future_to_date):
+                date = future_to_date[future]
+                try:
+                    allocations = future.result()
+                    quarterly_results[date] = allocations
+                    print(f"Completed rebalancing for {date.strftime('%Y-%m-%d')}")
+                except Exception as e:
+                    print(f"Error processing {date.strftime('%Y-%m-%d')}: {e}")
+        
+        # Sort results by date and run the backtest
+        sorted_dates = sorted(quarterly_results.keys())
+        self.run_backtest_with_results(sorted_dates, quarterly_results, start_date, end_date)
+    
+    def process_quarter(self, date):
+        """Process a single quarterly rebalancing"""
+        print(f"Processing quarter: {date.strftime('%Y-%m-%d')}")
+        
+        # Screen stocks for this quarter
+        selected_stocks = self.screen_stocks(date)
+        
+        if not selected_stocks:
+            print(f"No stocks passed screening criteria for {date.strftime('%Y-%m-%d')}")
+            return None
+        
+        # Calculate weights
+        weights = self.calculate_weights(selected_stocks)
+        
+        # Calculate allocation amounts
+        allocations = {}
+        for industry, weight in weights.items():
+            allocations[industry] = {
+                'ticker': selected_stocks[industry]['ticker'],
+                'weight': weight,
+                'amount': self.initial_capital * weight,  # Use initial capital for allocation calculation
+                'shares': int((self.initial_capital * weight) / selected_stocks[industry]['price'])
+            }
+        
+        return allocations
+    
+    def run_backtest_with_results(self, sorted_dates, quarterly_results, start_date, end_date):
+        """Run the backtest using pre-computed quarterly results"""
+        print("Running backtest with pre-computed quarterly results...")
         
         current_date = start_date
         allocations = None
-        spy_initial = self.get_spy_value(start_date)
+        portfolio_value = self.initial_capital
         
         while current_date <= end_date:
-            # Rebalance quarterly (every 3 months)
-            if current_date.month in [1, 4, 7, 10] and current_date.day == 1:
-                allocations = self.rebalance_portfolio(current_date)
+            # Check if this is a rebalancing date
+            if current_date in quarterly_results:
+                allocations = quarterly_results[current_date]
                 self.rebalance_dates.append(current_date)
+                print(f"Rebalancing on {current_date.strftime('%Y-%m-%d')} with {len(allocations)} positions")
             
             if allocations:
                 # Calculate current portfolio value
-                self.portfolio_value = self.calculate_portfolio_value(allocations, current_date)
+                portfolio_value = self.calculate_portfolio_value(allocations, current_date)
             
             # Get SPY value
             spy_value = self.get_spy_value(current_date)
@@ -225,7 +284,7 @@ class MZ50Index:
             # Record values
             self.portfolio_history.append({
                 'date': current_date,
-                'value': self.portfolio_value
+                'value': portfolio_value
             })
             
             if spy_value:
@@ -237,6 +296,8 @@ class MZ50Index:
             # Move to next month
             current_date += timedelta(days=32)
             current_date = current_date.replace(day=1)
+        
+        self.portfolio_value = portfolio_value
     
     def plot_results(self):
         """Plot the results"""
@@ -298,8 +359,8 @@ def main():
     end_date = datetime.now().replace(day=1)
     start_date = end_date - timedelta(days=5*365)
     
-    # Create and run the index
-    mz50 = MZ50Index(initial_capital=100000)
+    # Create and run the index with multithreading
+    mz50 = MZ50Index(initial_capital=100000, max_workers=10)
     mz50.run_backtest(start_date, end_date)
     mz50.plot_results()
 
