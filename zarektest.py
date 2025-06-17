@@ -9,39 +9,61 @@ warnings.filterwarnings('ignore')
 class MZ50Index:
     def __init__(self, initial_capital=100000):
         self.initial_capital = initial_capital
-        self.sp500_tickers = self._get_sp500_tickers()
-        self.industry_mapping = self._get_industry_mapping()
+        self.sp500_data = self._get_sp500_data()
         self.portfolio_value = initial_capital
         self.portfolio_history = []
         self.spy_history = []
         self.rebalance_dates = []
         
-    def _get_sp500_tickers(self):
-        """Get S&P 500 tickers - using a subset for demonstration"""
-        # In a real implementation, you'd fetch the full S&P 500 list
-        # For this demo, using a representative sample across industries
-        return [
-            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'BRK-B', 'JNJ', 'V',
-            'PG', 'JPM', 'UNH', 'HD', 'MA', 'DIS', 'PYPL', 'BAC', 'KO', 'PFE',
-            'ABT', 'TMO', 'AVGO', 'COST', 'PEP', 'ABBV', 'TXN', 'MRK', 'ACN', 'LLY',
-            'DHR', 'NEE', 'UNP', 'RTX', 'HON', 'LOW', 'IBM', 'BMY', 'T', 'QCOM',
-            'AMGN', 'CVX', 'SPGI', 'INTC', 'VZ', 'ADBE', 'WMT', 'NFLX', 'CMCSA', 'PM'
-        ]
+    def _get_sp500_data(self):
+        """Fetch S&P 500 data from Wikipedia using pandas"""
+        print("Fetching S&P 500 data from Wikipedia...")
+        
+        # Use pandas to read the Wikipedia table
+        sp_table = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
+        sp500_df = sp_table[0]
+        
+        # Extract the data we need
+        data = []
+        for _, stock in sp500_df.iterrows():
+            ticker = stock["Symbol"]
+            company = stock["Security"]
+            sector = stock["GICS Sector"]
+            sub_industry = stock["GICS Sub-Industry"]
+            
+            data.append({
+                'ticker': ticker,
+                'company': company,
+                'sector': sector,
+                'sub_industry': sub_industry
+            })
+        
+        print(f"Successfully fetched {len(data)} S&P 500 companies")
+        return data
     
-    def _get_industry_mapping(self):
-        """Map tickers to industries"""
-        # Simplified industry mapping for demonstration
-        industries = {
-            'Technology': ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'TSLA', 'NVDA', 'META', 'PYPL', 'AVGO', 'TXN', 'QCOM', 'ADBE', 'NFLX'],
-            'Healthcare': ['JNJ', 'UNH', 'PFE', 'ABT', 'TMO', 'MRK', 'LLY', 'BMY', 'AMGN'],
-            'Financial': ['BRK-B', 'V', 'MA', 'JPM', 'BAC'],
-            'Consumer': ['PG', 'HD', 'DIS', 'KO', 'COST', 'PEP', 'LOW', 'WMT', 'CMCSA'],
-            'Industrial': ['HON', 'UNP', 'RTX', 'NEE'],
-            'Energy': ['CVX'],
-            'Telecom': ['T', 'VZ'],
-            'Materials': ['PM']
-        }
-        return industries
+    def get_industry_mapping(self):
+        """Create industry mapping from S&P 500 data"""
+        industry_mapping = {}
+        
+        for stock in self.sp500_data:
+            sub_industry = stock['sub_industry']
+            ticker = stock['ticker']
+            
+            if sub_industry not in industry_mapping:
+                industry_mapping[sub_industry] = []
+            
+            industry_mapping[sub_industry].append(ticker)
+        
+        # Filter out industries with too few stocks (less than 3)
+        filtered_mapping = {k: v for k, v in industry_mapping.items() if len(v) >= 3}
+        
+        print(f"Found {len(filtered_mapping)} sub-industries with 3+ stocks")
+        for industry, tickers in list(filtered_mapping.items())[:10]:  # Show first 10
+            print(f"  {industry}: {len(tickers)} stocks")
+        if len(filtered_mapping) > 10:
+            print(f"  ... and {len(filtered_mapping) - 10} more sub-industries")
+        
+        return filtered_mapping
     
     def get_fundamental_data(self, ticker, date):
         """Get fundamental data for a ticker at a specific date"""
@@ -80,9 +102,10 @@ class MZ50Index:
         """Screen stocks based on fundamentals"""
         print(f"Screening stocks for {date.strftime('%Y-%m-%d')}...")
         
+        industry_mapping = self.get_industry_mapping()
         screened_stocks = {}
         
-        for industry, tickers in self.industry_mapping.items():
+        for industry, tickers in industry_mapping.items():
             industry_stocks = []
             
             for ticker in tickers:
