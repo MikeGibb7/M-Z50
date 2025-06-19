@@ -86,10 +86,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # For more aggressive parallelization (if your system can handle it)
-    mz50 = MZ50Index(initial_capital=100000, max_workers=20)
-
-    # For more conservative approach
-    mz50 = MZ50Index(initial_capital=100000, max_workers=5)
-
     main()
