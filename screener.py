@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from urllib.error import HTTPError
 
 def calculate_return(stock, years):
     end_date = datetime.today()
@@ -27,46 +28,60 @@ def main():
 
     data = []
 
-    
+    tickers = [ticker for ticker, _ in stock_df]
     one_avg = 0
     three_avg = 0
     five_avg = 0
     iterations = 0
     total_cap = 0
 
-
-    for ticker, industry in stock_df:
-        stock = yf.Ticker(ticker)
-        info = stock.info
-
-        market_cap = info.get('marketCap')
-        if isinstance(market_cap, (int, float)):
-           total_cap += market_cap
-
-        if( info.get('trailingPE') == None and info.get('shortName') != None):
-            iterations += 1
-            oney = calculate_return(ticker, 1)
-            threey = calculate_return(ticker, 3)
-            fivey = calculate_return(ticker, 5)
-
-            one_avg += oney
-            three_avg += threey
-            five_avg += fivey
-
-            data.append({
-                'Ticker': ticker,
-                'Company': info.get('shortName'),
-                'Sector': info.get('sector'),
-                'Industry': industry,
-                'YFIndustry': info.get('Industry'),
-                'Market Cap': market_cap,
-                'PE': info.get('trailingPE'),
-                'Percent of S&P': None,
-                '1yr Return': oney,
-                '3yr Return': threey,
-                '5yr Return': fivey
-            })
     
+    end_date = datetime.today()
+    start_date = end_date - timedelta(days=5 * 365)
+    histories = yf.download(tickers, start=start_date, end=end_date, group_by='ticker')
+    # stock_info = 
+    for ticker, industry in stock_df:
+        try:
+            info = stock.info
+
+            market_cap = info.get('marketCap')
+            if isinstance(market_cap, (int, float)):
+                total_cap += market_cap
+
+            if( info.get('trailingPE') == None and info.get('shortName') != None):
+                iterations += 1
+                # oney = calculate_return(ticker, 1)
+                # threey = calculate_return(ticker, 3)
+                closes = histories[ticker]['Close'].dropna()
+
+                if len(closes) >=2:
+                    start_price = closes.iloc[0]
+                    end_price = closes.iloc[-1]
+                    fivey = ((end_price - start_price) / start_price) * 100 
+                else:
+                    fivey = 0
+
+
+                # one_avg += oney
+                # three_avg += threey
+                five_avg += fivey
+
+                data.append({
+                    'Ticker': ticker,
+                    'Company': info.get('shortName'),
+                    'Sector': info.get('sector'),
+                    'Industry': industry,
+                    'YFIndustry': info.get('Industry'),
+                    'Market Cap': market_cap,
+                    'PE': info.get('trailingPE'),
+                    'Percent of S&P': None,
+                    # '1yr Return': oney,
+                    # '3yr Return': threey,
+                    '5yr Return': fivey
+                })
+        except Exception as e:
+            print(f"Error for ticker {ticker}: {e}")
+            
     for stock in data:
         stock['Percent of S&P'] = stock['Market Cap'] / total_cap * 100
 
