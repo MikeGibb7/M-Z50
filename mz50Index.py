@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import time
 warnings.filterwarnings('ignore')
 
 class MZ50Index:
@@ -18,6 +19,7 @@ class MZ50Index:
         self.spy_history = []
         self.rebalance_dates = []
         self.lock = threading.Lock()
+        self.fundamental_cache = {}  # Add cache for fundamental data
         
     def _get_sp500_data(self):
         """Fetch S&P 500 data from Wikipedia using pandas"""
@@ -69,98 +71,169 @@ class MZ50Index:
         
         return filtered_mapping
     
-    def get_fundamental_data(self, ticker, date):
-        """Get fundamental data for a ticker at a specific date"""
+    def get_fundamental_data(self, ticker, date, price_data=None):
+        """Get fundamental data for a ticker at a specific date, using pre-fetched price data if available and a cache to minimize requests"""
+        # Use cache if available
+        if ticker in self.fundamental_cache:
+            cached = self.fundamental_cache[ticker]
+            # Attach price data for this date
+            if price_data is not None and ticker in price_data:
+                cached = dict(cached)  # Copy to avoid mutating cache
+                cached['hist'] = price_data[ticker]
+                if not cached['hist'].empty:
+                    cached['price'] = cached['hist']['Close'].iloc[-1]
+            return cached
         try:
             stock = yf.Ticker(ticker)
-            
-            # Get historical data
-            hist = stock.history(start=date - timedelta(days=365), end=date)
+            # Use pre-fetched price data if available
+            if price_data is not None and ticker in price_data:
+                hist = price_data[ticker]
+            else:
+                hist = stock.history(start=date - timedelta(days=365), end=date)
             if hist.empty:
                 return None
-            
-            # Get financial data
             info = stock.info
-            
-            # Calculate metrics
             pe_ratio = info.get('trailingPE', float('inf'))
             roe = info.get('returnOnEquity', 0)
             debt_to_equity = info.get('debtToEquity', float('inf'))
             market_cap = info.get('marketCap', 0)
-            
-            # Get price data
             current_price = hist['Close'].iloc[-1] if not hist.empty else 0
-            
-            return {
+            result = {
                 'ticker': ticker,
                 'pe_ratio': pe_ratio,
                 'roe': roe,
                 'debt_to_equity': debt_to_equity,
                 'market_cap': market_cap,
-                'price': current_price
+                'price': current_price,
+                'hist': hist
             }
-        except:
+            self.fundamental_cache[ticker] = dict(result)  # Store in cache (without mutating hist)
+            return result
+        except Exception as e:
+            print(f"Error fetching data for {ticker}: {e}")
+            if '401' in str(e):
+                time.sleep(1)
             return None
     
-    def process_industry(self, industry, tickers, date):
-        """Process a single industry to find the best stock"""
-        industry_stocks = []
-        
+    def process_industry(self, industry, tickers, date, price_data=None):
+        """Process a single industry to find the best stock using reliable fundamentals and price return."""
+        candidates = []
+        fallback_stocks = []
         for ticker in tickers:
-            data = self.get_fundamental_data(ticker, date)
-            if data and data['pe_ratio'] != float('inf') and data['debt_to_equity'] != float('inf'):
-                industry_stocks.append(data)
-        
-        if industry_stocks:
-            # Sort by criteria: low P/E, high ROE, low Debt/Equity
-            industry_stocks.sort(key=lambda x: (
-                x['pe_ratio'],  # Lower is better
-                -x['roe'],      # Higher is better (negative for ascending sort)
-                x['debt_to_equity']  # Lower is better
-            ))
-            
-            # Select the best stock from this industry
-            best_stock = industry_stocks[0]
-            
+            # Get price data for 1-year return
+            hist = None
+            if price_data is not None and ticker in price_data:
+                hist = price_data[ticker]
+            else:
+                try:
+                    hist = yf.download(ticker, start=date - timedelta(days=365), end=date, progress=False)
+                except Exception as e:
+                    print(f"Error fetching price data for {ticker}: {e}")
+            if hist is None or hist.empty or 'Close' not in hist:
+                continue
+            closes = hist['Close'].dropna()
+            if len(closes) < 2:
+                continue
+            price_return = (closes.iloc[-1] - closes.iloc[0]) / closes.iloc[0]
+            # Try to get market cap and P/E
+            try:
+                stock = yf.Ticker(ticker)
+                info = stock.info
+                market_cap = info.get('marketCap', None)
+                pe_ratio = info.get('trailingPE', None)
+            except Exception as e:
+                print(f"Error fetching fundamentals for {ticker}: {e}")
+                market_cap = None
+                pe_ratio = None
+            if market_cap is not None and pe_ratio is not None and pe_ratio != float('inf'):
+                candidates.append({
+                    'ticker': ticker,
+                    'market_cap': market_cap,
+                    'pe_ratio': pe_ratio,
+                    'price_return': price_return,
+                    'price': closes.iloc[-1],
+                    'hist': hist
+                })
+            else:
+                fallback_stocks.append({
+                    'ticker': ticker,
+                    'market_cap': market_cap,
+                    'pe_ratio': pe_ratio,
+                    'price_return': price_return,
+                    'price': closes.iloc[-1],
+                    'hist': hist
+                })
+        best_stock = None
+        if candidates:
+            # Pick the one with highest 1-year price return among those with valid market cap and P/E
+            candidates.sort(key=lambda x: -x['price_return'])
+            best_stock = candidates[0]
             with self.lock:
-                print(f"  {industry}: {best_stock['ticker']} (P/E: {best_stock['pe_ratio']:.2f}, ROE: {best_stock['roe']:.2%}, D/E: {best_stock['debt_to_equity']:.2f})")
-            
-            return industry, best_stock
-        
-        return industry, None
+                print(f"  {industry}: {best_stock['ticker']} (P/E: {best_stock['pe_ratio']}, Market Cap: {best_stock['market_cap']}, 1yr return: {best_stock['price_return']:.2%})")
+        elif fallback_stocks:
+            # Fallback: pick the one with highest 1-year price return
+            fallback_stocks.sort(key=lambda x: -x['price_return'])
+            best_stock = fallback_stocks[0]
+            with self.lock:
+                print(f"  {industry}: {best_stock['ticker']} (Fallback: 1yr return {best_stock['price_return']:.2%})")
+        return industry, best_stock
     
     def screen_stocks(self, date):
-        """Screen stocks based on fundamentals using multithreading"""
+        """Screen stocks based on fundamentals using multithreading and batch price data fetching"""
         print(f"Screening stocks for {date.strftime('%Y-%m-%d')}...")
-        
         industry_mapping = self.get_industry_mapping()
         screened_stocks = {}
-        
-        # Use ThreadPoolExecutor to process industries in parallel
+        all_tickers = set()
+        for tickers in industry_mapping.values():
+            all_tickers.update(tickers)
+        all_tickers = list(all_tickers)
+        start_hist = date - timedelta(days=365)
+        end_hist = date
+        print(f"Fetching price data for {len(all_tickers)} tickers in batch...")
+        price_data = yf.download(all_tickers, start=start_hist, end=end_hist, group_by='ticker', threads=True, progress=False)
+        price_data_dict = {}
+        if price_data is not None:
+            if len(all_tickers) == 1:
+                price_data_dict[all_tickers[0]] = price_data
+            else:
+                for ticker in all_tickers:
+                    try:
+                        if hasattr(price_data, 'columns') and (ticker,) in price_data.columns:
+                            price_data_dict[ticker] = price_data[ticker]
+                        elif isinstance(price_data, dict) and ticker in price_data:
+                            price_data_dict[ticker] = price_data[ticker]
+                        elif hasattr(price_data, 'columns') and (ticker, 'Close') in price_data.columns:
+                            cols = [col for col in price_data.columns if col[0] == ticker]
+                            price_data_dict[ticker] = price_data[list(cols)]
+                        elif hasattr(price_data, 'xs'):
+                            price_data_dict[ticker] = price_data.xs(ticker, axis=1, level=0, drop_level=False)
+                    except Exception:
+                        continue
         with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
-            # Submit all industry processing tasks
             future_to_industry = {
-                executor.submit(self.process_industry, industry, tickers, date): industry
+                executor.submit(self.process_industry, industry, tickers, date, price_data_dict): industry
                 for industry, tickers in industry_mapping.items()
             }
-            
-            # Collect results as they complete
             for future in as_completed(future_to_industry):
                 industry, best_stock = future.result()
                 if best_stock:
                     screened_stocks[industry] = best_stock
-        
+        print(f"Selected {len(screened_stocks)} industries for {date.strftime('%Y-%m-%d')}")
         return screened_stocks
     
     def calculate_weights(self, selected_stocks):
-        """Calculate market cap weighted allocations"""
-        total_market_cap = sum(stock['market_cap'] for stock in selected_stocks.values())
-        
-        weights = {}
-        for industry, stock in selected_stocks.items():
-            weights[industry] = stock['market_cap'] / total_market_cap
-        
-        return weights
+        """Calculate market cap weighted allocations, fallback to equal weight if market cap missing."""
+        # Check if all have market cap
+        if all(stock.get('market_cap') for stock in selected_stocks.values()):
+            total_market_cap = sum(stock['market_cap'] for stock in selected_stocks.values())
+            weights = {}
+            for industry, stock in selected_stocks.items():
+                weights[industry] = stock['market_cap'] / total_market_cap
+            return weights
+        else:
+            # Equal weight fallback
+            n = len(selected_stocks)
+            return {industry: 1/n for industry in selected_stocks}
     
     def calculate_portfolio_value(self, allocations, date):
         """Calculate current portfolio value"""
@@ -293,55 +366,44 @@ class MZ50Index:
         self.portfolio_value = portfolio_value
     
     def plot_results(self):
-        """Plot the results"""
-        if not self.portfolio_history or not self.spy_history:
+        if not self.portfolio_history and not self.spy_history:
             print("No data to plot")
             return
-        
+
         # Convert to DataFrames
-        portfolio_df = pd.DataFrame(self.portfolio_history)
-        spy_df = pd.DataFrame(self.spy_history)
-        
-        # Normalize to starting values
-        portfolio_start = portfolio_df['value'].iloc[0]
-        spy_start = spy_df['value'].iloc[0]
-        
-        portfolio_df['normalized'] = portfolio_df['value'] / portfolio_start * 100000
-        spy_df['normalized'] = spy_df['value'] / spy_start * 100000
-        
-        # Calculate performance metrics
-        portfolio_return = (portfolio_df['normalized'].iloc[-1] - 100000) / 100000
-        spy_return = (spy_df['normalized'].iloc[-1] - 100000) / 100000
-        
-        # Plot
+        if self.portfolio_history:
+            portfolio_df = pd.DataFrame(self.portfolio_history)
+            portfolio_start = portfolio_df['value'].iloc[0]
+            portfolio_df['normalized'] = portfolio_df['value'] / portfolio_start * 100000
+            portfolio_return = (portfolio_df['normalized'].iloc[-1] - 100000) / 100000
+        else:
+            portfolio_df = None
+            print("No custom index data to plot.")
+
+        if self.spy_history:
+            spy_df = pd.DataFrame(self.spy_history)
+            spy_start = spy_df['value'].iloc[0]
+            spy_df['normalized'] = spy_df['value'] / spy_start * 100000
+            spy_return = (spy_df['normalized'].iloc[-1] - 100000) / 100000
+        else:
+            spy_df = None
+            print("No SPY data to plot.")
+
         plt.figure(figsize=(12, 8))
-        
-        plt.plot(portfolio_df['date'], portfolio_df['normalized'], 
-                label=f'M&Z50 Index ({portfolio_return:.1%})', linewidth=2, color='blue')
-        plt.plot(spy_df['date'], spy_df['normalized'], 
-                label=f'SPY ({spy_return:.1%})', linewidth=2, color='red', alpha=0.7)
-        
-        # Mark rebalance dates
+        if portfolio_df is not None:
+            plt.plot(portfolio_df['date'], portfolio_df['normalized'], 
+                     label=f'M&Z50 Index ({portfolio_return:.1%})', linewidth=2, color='blue')
+        if spy_df is not None:
+            plt.plot(spy_df['date'], spy_df['normalized'], 
+                     label=f'SPY ({spy_return:.1%})', linewidth=2, color='red', alpha=0.7)
+
         for date in self.rebalance_dates:
             plt.axvline(x=date, color='gray', alpha=0.3, linestyle='--')
-        
+
         plt.title('M&Z50 Index vs SPY Performance', fontsize=16, fontweight='bold')
         plt.xlabel('Date', fontsize=12)
         plt.ylabel('Portfolio Value ($)', fontsize=12)
         plt.legend(fontsize=12)
         plt.grid(True, alpha=0.3)
         plt.tight_layout()
-        
-        # Print performance summary
-        print(f"\n{'='*50}")
-        print("PERFORMANCE SUMMARY")
-        print(f"{'='*50}")
-        print(f"Initial Investment: ${self.initial_capital:,.0f}")
-        print(f"Final M&Z50 Value: ${portfolio_df['normalized'].iloc[-1]:,.0f}")
-        print(f"Final SPY Value: ${spy_df['normalized'].iloc[-1]:,.0f}")
-        print(f"M&Z50 Return: {portfolio_return:.2%}")
-        print(f"SPY Return: {spy_return:.2%}")
-        print(f"Excess Return: {portfolio_return - spy_return:.2%}")
-        print(f"Number of Rebalances: {len(self.rebalance_dates)}")
-        
         plt.show()
