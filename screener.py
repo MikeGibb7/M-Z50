@@ -42,6 +42,9 @@ def main():
     # stock_info = 
     for ticker, industry in stock_df:
         try:
+            yf_ticker = ticker.replace('.', '-')  # Fix BRK.B → BRK-B
+            stock = yf.Ticker(yf_ticker)          # Create Ticker object
+
             info = stock.info
 
             market_cap = info.get('marketCap')
