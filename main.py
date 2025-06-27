@@ -7,6 +7,7 @@ from datetime import datetime
 from screener import screen
 
 def extract_chart_data_from_url(ticker, start_date=None, end_date=None):
+    ticker = ticker.replace('-', '.')
     url = f"https://www.alphaquery.com/stock/{ticker}/earnings-history"
     headers = {"User-Agent": "Mozilla/5.0"}
     response = requests.get(url, headers=headers)
@@ -51,10 +52,11 @@ def main():
     dates = [
     # ("2024-01-01", "2024-03-31"),  # Q1
     # ("2024-04-01", "2024-06-30"),  # Q2
-    ("2024-07-01", "2024-09-30"),  # Q3
+    # ("2024-07-01", "2024-09-30"),  # Q3
     ("2024-10-01", "2024-12-31")   # Q4
     ]
     capital = 100000
+    spy_cap = 100000
 
     start_date="2023-01-01"
     end_date="2025-01-01"
@@ -62,20 +64,31 @@ def main():
     tickers = gsp()
     ticker_list = []
     earnings = {}
-    for ticker, industry in tickers[:20]:
-        ticker_list.append((ticker, industry))
-        earnings_data = extract_chart_data_from_url(ticker, start_date, end_date)
-        earnings[ticker] = earnings_data
+    for ticker, industry in tickers:
+        if ticker != "GOOGL":
+            earnings_data = extract_chart_data_from_url(ticker, start_date, end_date)
+            earnings[ticker] = earnings_data
+            if earnings_data:
+                ticker_list.append((ticker, industry))
         # dates = earnings_data['x']
         
         # if earnings_data:
             # for point in earnings_data:
             #     print(f"Date: {point['x']}, Estimated: {point['epsEstimated']}, Actual: {point['epsActual']}")
     
+    portfolio = []
     for start_date, end_date in dates:
-        month_ret = screen(ticker_list, earnings, start_date, end_date)
+        month_ret, spy_ret = screen(ticker_list, earnings, start_date, end_date)
         capital = capital + capital * month_ret / 100
-    print(capital)
+        spy_cap = spy_cap + spy_cap * spy_ret
+        portfolio.append({
+            'Date': end_date,
+            'Quarter Return': month_ret,
+            'Capital': capital,
+            'SPY Return': spy_ret,
+            'SPY Capital': spy_cap
+        })
+    print(portfolio)
 
 
 

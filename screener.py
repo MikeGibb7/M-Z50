@@ -1,3 +1,4 @@
+from collections import defaultdict
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -60,9 +61,6 @@ def screen(stock_df, earnings, start, end):
         # Sum up epsActual values
         ttm_eps = sum(e['epsActual'] for e in ttm_entries)
 
-        print(f"TTM EPS for {ticker} before {end}: {ttm_eps}")
-
-
         try:
             yf_ticker = yf.Ticker(ticker)
             info = yf_ticker.info
@@ -70,7 +68,7 @@ def screen(stock_df, earnings, start, end):
             if isinstance(market_cap, (int, float)):
                 total_cap += market_cap
 
-            if( ttm_eps > 0 and info.get('shortName') != None):
+            if(info.get('shortName') != None): # ttm_eps > 0 and 
                 iterations += 1
                 closes = histories[ticker]['Close'].dropna()
 
@@ -90,22 +88,36 @@ def screen(stock_df, earnings, start, end):
                     'return' : ret,
                     'Market Cap': market_cap,
                     'Percent of S&P': None,
-                    'PE': pe
+                    'PE': pe,
+                    'TTM_EPS': ttm_eps,
                 })
         except Exception as e:
             print(f"Error for ticker {ticker}: {e}")
             
+    industry_map = defaultdict(list)
     for stock in data:
-        stock['Percent of S&P'] = stock['Market Cap'] / total_cap * 100
+        if stock['PE'] is not None:
+            industry_map[stock['Industry']].append(stock)
+
+    filtered_data = []
+    for industry, stocks in industry_map.items():
+        # Sort by PE and take the first one (lowest PE)
+        lowest_pe_stock = min(stocks, key=lambda x: x['PE'])
+        filtered_data.append(lowest_pe_stock)
+
+    data = filtered_data
+
+    for stock in data:
+        stock['Percent of S&P'] = 1 / len(data) * 100
         total_ret = stock['Percent of S&P'] / 100 * stock['return']
 
     df = pd.DataFrame(data)
     print(df.to_string(index=False))  
-    print(f"Total Market Cap: {total_cap}")
+    # print(f"Total Market Cap: {total_cap}")
     spy_ret = calculate_spy_return(start, end)
-    print(f"Our Return: {total_ret}")
+    # print(f"Our Return: {total_ret}")
 
-    return total_ret
+    return total_ret, spy_ret
 
 
     
