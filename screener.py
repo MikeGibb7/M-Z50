@@ -29,7 +29,7 @@ def calculate_spy_return(start_date, end_date):
     start_price = spy['Close'].iloc[0].item()
     end_price = spy['Close'].iloc[-1].item()
 
-    spy_return = (end_price - start_price) / start_price
+    spy_return = (end_price - start_price) / start_price * 100
 
     print(f"SPY return from {start_date} to {end_date}: {spy_return}")
     return spy_return
@@ -41,6 +41,7 @@ def screen(stock_df, earnings, start, end):
     tickers = [ticker for ticker, _ in stock_df]
     iterations = 0
     total_cap = 0
+    total_ret = 0
 
     histories = yf.download(tickers, start=start, end=end, group_by='ticker')
     # stock_info = 
@@ -60,39 +61,39 @@ def screen(stock_df, earnings, start, end):
 
         # Sum up epsActual values
         ttm_eps = sum(e['epsActual'] for e in ttm_entries)
+        if ttm_eps < 0:
+            try:
+                yf_ticker = yf.Ticker(ticker)
+                info = yf_ticker.info
+                market_cap = info.get('marketCap')
+                if isinstance(market_cap, (int, float)):
+                    total_cap += market_cap
 
-        try:
-            yf_ticker = yf.Ticker(ticker)
-            info = yf_ticker.info
-            market_cap = info.get('marketCap')
-            if isinstance(market_cap, (int, float)):
-                total_cap += market_cap
+                if(info.get('shortName') != None): # ttm_eps > 0 and 
+                    iterations += 1
+                    closes = histories[ticker]['Close'].dropna()
 
-            if(info.get('shortName') != None): # ttm_eps > 0 and 
-                iterations += 1
-                closes = histories[ticker]['Close'].dropna()
+                    if len(closes) >=2:
+                        start_price = closes.iloc[0]
+                        pe = start_price / ttm_eps
+                        end_price = closes.iloc[-1]
+                        ret = ((end_price - start_price) / start_price) * 100
+                    else:
+                        ret = 0
 
-                if len(closes) >=2:
-                    start_price = closes.iloc[0]
-                    pe = start_price / ttm_eps
-                    end_price = closes.iloc[-1]
-                    ret = ((end_price - start_price) / start_price) * 100 
-                else:
-                    ret = 0
-
-                data.append({
-                    'Ticker': ticker,
-                    'Company': info.get('shortName'),
-                    'Sector': info.get('sector'),
-                    'Industry': industry,
-                    'return' : ret,
-                    'Market Cap': market_cap,
-                    'Percent of S&P': None,
-                    'PE': pe,
-                    'TTM_EPS': ttm_eps,
-                })
-        except Exception as e:
-            print(f"Error for ticker {ticker}: {e}")
+                    data.append({
+                        'Ticker': ticker,
+                        'Company': info.get('shortName'),
+                        'Sector': info.get('sector'),
+                        'Industry': industry,
+                        'return' : ret,
+                        'Market Cap': market_cap,
+                        'Percent of S&P': None,
+                        'PE': pe,
+                        'TTM_EPS': ttm_eps,
+                    })
+            except Exception as e:
+                print(f"Error for ticker {ticker}: {e}")
             
     industry_map = defaultdict(list)
     for stock in data:
@@ -108,8 +109,8 @@ def screen(stock_df, earnings, start, end):
     data = filtered_data
 
     for stock in data:
-        stock['Percent of S&P'] = 1 / len(data) * 100
-        total_ret = stock['Percent of S&P'] / 100 * stock['return']
+        stock['Percent of S&P'] = 100 / len(data)
+        total_ret = total_ret + (stock['Percent of S&P'] / 100 ) * stock['return']
 
     df = pd.DataFrame(data)
     print(df.to_string(index=False))  

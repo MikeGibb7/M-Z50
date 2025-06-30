@@ -50,15 +50,23 @@ def extract_chart_data_from_url(ticker, start_date=None, end_date=None):
 # Example usage
 def main():
     dates = [
-    # ("2024-01-01", "2024-03-31"),  # Q1
-    # ("2024-04-01", "2024-06-30"),  # Q2
-    # ("2024-07-01", "2024-09-30"),  # Q3
-    ("2024-10-01", "2024-12-31")   # Q4
+    # ("2023-01-01", "2023-03-31"),  # 2023 Q1
+    # ("2023-04-01", "2023-06-30"),  # 2023 Q2
+    # ("2023-07-01", "2023-09-30"),  # 2023 Q3
+    # ("2023-10-01", "2023-12-31"),  # 2023 Q4
+    # ("2024-01-01", "2024-03-31"),  # 2024 Q1
+    # ("2024-04-01", "2024-06-30"),  # 2024 Q2
+    # ("2024-07-01", "2024-09-30"),  # 2024 Q3
+    # ("2024-10-01", "2024-12-31"),  # 2024 Q4
+    ("2025-01-01", "2025-03-31"),  # 2025 Q1
+    ("2025-04-01", "2025-06-30"),  # 2025 Q2
+    ("2025-07-01", "2025-09-30"),  # 2025 Q3
+    ("2025-10-01", "2025-12-31")   # 2025 Q4
     ]
     capital = 100000
     spy_cap = 100000
 
-    start_date="2023-01-01"
+    start_date="2022-01-01"
     end_date="2025-01-01"
 
     tickers = gsp()
@@ -80,7 +88,7 @@ def main():
     for start_date, end_date in dates:
         month_ret, spy_ret = screen(ticker_list, earnings, start_date, end_date)
         capital = capital + capital * month_ret / 100
-        spy_cap = spy_cap + spy_cap * spy_ret
+        spy_cap = spy_cap + spy_cap * spy_ret / 100
         portfolio.append({
             'Date': end_date,
             'Quarter Return': month_ret,
