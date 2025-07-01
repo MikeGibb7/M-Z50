@@ -62,59 +62,59 @@ def screen(stock_df, earnings, start, end):
 
         # Sum up epsActual values
         ttm_eps = sum(e['epsActual'] for e in ttm_entries)
-        if ttm_eps < 0:
+        if ttm_eps:
             try:
-                yf_ticker = yf.Ticker(ticker)
-                info = yf_ticker.info
-                market_cap = info.get('marketCap')
-                if isinstance(market_cap, (int, float)):
-                    total_cap += market_cap
+                # yf_ticker = yf.Ticker(ticker)
+                # info = yf_ticker.info
+                # market_cap = info.get('marketCap')
+                # if isinstance(market_cap, (int, float)):
+                #     total_cap += market_cap
 
-                if(info.get('shortName') != None): # ttm_eps > 0 and 
-                    iterations += 1
-                    closes = histories[ticker]['Close'].dropna()
+                # if(info.get('shortName') != None): # ttm_eps > 0 and 
+                iterations += 1
+                closes = histories[ticker]['Close'].dropna()
 
-                    if len(closes) >=2:
-                        start_price = closes.iloc[0]
-                        pe = start_price / ttm_eps
-                        end_price = closes.iloc[-1]
-                        ret = ((end_price - start_price) / start_price) * 100
-                    else:
-                        ret = 0
+                if len(closes) >=2:
+                    start_price = closes.iloc[0]
+                    pe = start_price / ttm_eps
+                    end_price = closes.iloc[-1]
+                    ret = ((end_price - start_price) / start_price) * 100
+                else:
+                    ret = 0
 
-                    data.append({
-                        'Ticker': ticker,
-                        'Company': info.get('shortName'),
-                        'Sector': info.get('sector'),
-                        'Industry': industry,
-                        'return' : ret,
-                        'Market Cap': market_cap,
-                        'Percent of S&P': None,
-                        'PE': pe,
-                        'TTM_EPS': ttm_eps,
-                    })
-                time.sleep(0.05)
+                data.append({
+                    'Ticker': ticker,
+                    # 'Company': info.get('shortName'),
+                    # 'Sector': info.get('sector'),
+                    'Industry': industry,
+                    'return' : ret,
+                    # 'Market Cap': market_cap,
+                    'Percent of M&Z': None,
+                    'PE': pe,
+                    'TTM_EPS': ttm_eps,
+                })
+                # time.sleep(0.05)
             except Exception as e:
                 print(f"Error for ticker {ticker}: {e}")
             
-    # industry_map = defaultdict(list)
-    # for stock in data:
-    #     if stock['PE'] is not None:
-    #         industry_map[stock['Industry']].append(stock)
+    industry_map = defaultdict(list)
+    for stock in data:
+        if stock['PE'] is not None:
+            industry_map[stock['Industry']].append(stock)
 
-    # filtered_data = []
-    # for industry, stocks in industry_map.items():
-    #     # Sort by PE and take the first one (lowest PE)
-    #     # lowest_pe_stock = min(stocks, key=lambda x: x['PE'])
-    #     # filtered_data.append(lowest_pe_stock)
-    #     highest_pe_stock = max(stocks, key=lambda x: x['PE'])
-    #     filtered_data.append(highest_pe_stock)
+    filtered_data = []
+    for industry, stocks in industry_map.items():
+        # Sort by PE and take the first one (lowest PE)
+        lowest_pe_stock = min(stocks, key=lambda x: x['PE'])
+        filtered_data.append(lowest_pe_stock)
+        # highest_pe_stock = max(stocks, key=lambda x: x['PE'])
+        # filtered_data.append(highest_pe_stock)
 
-    # data = filtered_data
+    data = filtered_data
 
     for stock in data:
-        stock['Percent of S&P'] = 100 / len(data)
-        total_ret = total_ret + (stock['Percent of S&P'] / 100 ) * stock['return']
+        stock['Percent of M&Z'] = 100 / len(data)
+        total_ret = total_ret + (stock['Percent of M&Z'] / 100 ) * stock['return']
 
     df = pd.DataFrame(data)
     print(df.to_string(index=False))  
