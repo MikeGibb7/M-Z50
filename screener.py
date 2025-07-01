@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from urllib.error import HTTPError
+import time
 
 def calculate_return(stock, years):
     end_date = datetime.today()
@@ -92,21 +93,24 @@ def screen(stock_df, earnings, start, end):
                         'PE': pe,
                         'TTM_EPS': ttm_eps,
                     })
+                time.sleep(0.05)
             except Exception as e:
                 print(f"Error for ticker {ticker}: {e}")
             
-    industry_map = defaultdict(list)
-    for stock in data:
-        if stock['PE'] is not None:
-            industry_map[stock['Industry']].append(stock)
+    # industry_map = defaultdict(list)
+    # for stock in data:
+    #     if stock['PE'] is not None:
+    #         industry_map[stock['Industry']].append(stock)
 
-    filtered_data = []
-    for industry, stocks in industry_map.items():
-        # Sort by PE and take the first one (lowest PE)
-        lowest_pe_stock = min(stocks, key=lambda x: x['PE'])
-        filtered_data.append(lowest_pe_stock)
+    # filtered_data = []
+    # for industry, stocks in industry_map.items():
+    #     # Sort by PE and take the first one (lowest PE)
+    #     # lowest_pe_stock = min(stocks, key=lambda x: x['PE'])
+    #     # filtered_data.append(lowest_pe_stock)
+    #     highest_pe_stock = max(stocks, key=lambda x: x['PE'])
+    #     filtered_data.append(highest_pe_stock)
 
-    data = filtered_data
+    # data = filtered_data
 
     for stock in data:
         stock['Percent of S&P'] = 100 / len(data)
