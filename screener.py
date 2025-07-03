@@ -75,7 +75,7 @@ def screen(stock_df, earnings, start, end):
                     iterations += 1
                     closes = histories[ticker]['Close'].dropna()
 
-                    if len(closes) >=2:
+                    if len(closes) >=1:
                         start_price = closes.iloc[0]
                         pe = start_price / ttm_eps
                         end_price = closes.iloc[-1]
