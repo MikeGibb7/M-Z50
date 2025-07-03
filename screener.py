@@ -51,51 +51,52 @@ def screen(stock_df, earnings, start, end):
         hist_earn = earnings[ticker]
         
         end_dt = datetime.fromisoformat(start)
-        filtered = [
-            earn for earn in hist_earn 
-            if datetime.fromisoformat(earn['x']) < end_dt
-        ]
-        filtered.sort(key=lambda e: datetime.fromisoformat(e['x']), reverse=True)
+        if hist_earn is not None:
+            filtered = [
+                earn for earn in hist_earn 
+                if datetime.fromisoformat(earn['x']) < end_dt
+            ]
+            filtered.sort(key=lambda e: datetime.fromisoformat(e['x']), reverse=True)
 
-        # Take the most recent 4 quarters
-        ttm_entries = filtered[:4]
+            # Take the most recent 4 quarters
+            ttm_entries = filtered[:4]
 
-        # Sum up epsActual values
-        ttm_eps = sum(e['epsActual'] for e in ttm_entries)
-        if ttm_eps:
-            try:
-                # yf_ticker = yf.Ticker(ticker)
-                # info = yf_ticker.info
-                # market_cap = info.get('marketCap')
-                # if isinstance(market_cap, (int, float)):
-                #     total_cap += market_cap
+            # Sum up epsActual values
+            ttm_eps = sum(e['epsActual'] for e in ttm_entries)
+            if ttm_eps:
+                try:
+                    # yf_ticker = yf.Ticker(ticker)
+                    # info = yf_ticker.info
+                    # market_cap = info.get('marketCap')
+                    # if isinstance(market_cap, (int, float)):
+                    #     total_cap += market_cap
 
-                # if(info.get('shortName') != None): # ttm_eps > 0 and 
-                iterations += 1
-                closes = histories[ticker]['Close'].dropna()
+                    # if(info.get('shortName') != None): # ttm_eps > 0 and 
+                    iterations += 1
+                    closes = histories[ticker]['Close'].dropna()
 
-                if len(closes) >=2:
-                    start_price = closes.iloc[0]
-                    pe = start_price / ttm_eps
-                    end_price = closes.iloc[-1]
-                    ret = ((end_price - start_price) / start_price) * 100
-                else:
-                    ret = 0
+                    if len(closes) >=2:
+                        start_price = closes.iloc[0]
+                        pe = start_price / ttm_eps
+                        end_price = closes.iloc[-1]
+                        ret = ((end_price - start_price) / start_price) * 100
+                    else:
+                        ret = 0
 
-                data.append({
-                    'Ticker': ticker,
-                    # 'Company': info.get('shortName'),
-                    # 'Sector': info.get('sector'),
-                    'Industry': industry,
-                    'return' : ret,
-                    # 'Market Cap': market_cap,
-                    'Percent of M&Z': None,
-                    'PE': pe,
-                    'TTM_EPS': ttm_eps,
-                })
-                # time.sleep(0.05)
-            except Exception as e:
-                print(f"Error for ticker {ticker}: {e}")
+                    data.append({
+                        'Ticker': ticker,
+                        # 'Company': info.get('shortName'),
+                        # 'Sector': info.get('sector'),
+                        'Industry': industry,
+                        'return' : ret,
+                        # 'Market Cap': market_cap,
+                        'Percent of M&Z': None,
+                        'PE': pe,
+                        'TTM_EPS': ttm_eps,
+                    })
+                    # time.sleep(0.05)
+                except Exception as e:
+                    print(f"Error for ticker {ticker}: {e}")
             
     # industry_map = defaultdict(list)
     # for stock in data:

@@ -71,6 +71,62 @@ def extract_chart_data_from_url(ticker, start_date=None, end_date=None):
         print("Error parsing JSON:", e)
         return None
 
+def get_quarterly_ticker_changes(changes_df, dates):
+    # Step 1: Flatten column MultiIndex
+    changes_df.columns = [' '.join(col).strip() for col in changes_df.columns]
+
+    # Step 2: Clean + parse Date column
+    changes_df['Date Date'] = changes_df['Date Date'].astype(str).str.strip()
+    changes_df['Date Date'] = pd.to_datetime(changes_df['Date Date'], errors='coerce')
+
+    # Step 3: Rename columns for clarity (optional but cleaner)
+    changes_df = changes_df.rename(columns={
+        'Date Date': 'Date',
+        'Added Ticker': 'Added',
+        'Removed Ticker': 'Removed'
+    })
+
+    results = []
+
+    for start_str, end_str in dates:
+        start = pd.to_datetime(start_str)
+        end = pd.to_datetime(end_str)
+
+        # Filter changes in date range
+        quarter_changes = changes_df[(changes_df['Date'] >= start) & (changes_df['Date'] <= end)]
+
+        # Collect added and removed tickers
+        added = quarter_changes['Added'].dropna().unique().tolist()
+        removed = quarter_changes['Removed'].dropna().unique().tolist()
+
+        results.append({
+            'start': start_str,
+            'end': end_str,
+            'added': added,
+            'removed': removed
+        })
+
+    return results
+
+def fetch_industries(ticker_list):
+    results = []
+    for ticker in ticker_list:
+        try:
+            info = yf.Ticker(ticker).info
+            industry = info.get('industry')
+        except Exception:
+            industry = 'Unknown'
+        results.append((ticker, industry))
+    return results
+
+def fetch_industry(ticker):
+    try:
+        info = yf.Ticker(ticker).info
+        industry = info.get('industry')
+    except Exception:
+        industry = 'Unknown'
+    return industry
+
 # Example usage
 def main():
 
@@ -106,9 +162,26 @@ def main():
     start_date="2020-01-01"
     end_date="2025-06-30"
 
-    tickers = gsp()
+    tickers, changes_df = gsp()  # your get_sp500_companies() wrapper
+    quarter_changes = get_quarterly_ticker_changes(changes_df, dates)
+    tickers.extend([rem for q in quarter_changes for rem in q['removed']])
+    
+    # Add removed tickers if not already in the list
+    for q in quarter_changes:
+        for rem in q['removed']:
+            if rem not in tickers:
+                tickers.append(rem)
+
+    # Add added tickers if not already in the list
+    for q in quarter_changes:
+        for add in q['added']:
+            if add not in tickers:
+                tickers.append(add)
+
+    tickers = fetch_industries(tickers)
     ticker_list = []
     earnings = {}
+    
     for ticker, industry in tickers:
         if ticker != "GOOGL":
             earnings_data = extract_chart_data_from_url(ticker, start_date, end_date)
@@ -118,18 +191,37 @@ def main():
         # dates = earnings_data['x']
         
         # if earnings_data:
-            # for point in earnings_data:
-            #     print(f"Date: {point['x']}, Estimated: {point['epsEstimated']}, Actual: {point['epsActual']}")
+        #     for point in earnings_data:
+        #         print(f"Date: {point['x']}, Estimated: {point['epsEstimated']}, Actual: {point['epsActual']}")
     
     portfolio = []
     portfolio.append({
-        'Date': "2020-01-01",
+        'Date': "2021-01-01",
         'Quarter Return': 0,
         'Capital': capital,
         'SPY Return': 0,
         'SPY Capital': spy_cap
     })
     for start_date, end_date in dates:
+        for change in quarter_changes:
+            
+            start_dt = datetime.fromisoformat(start_date)
+            change_dt = datetime.fromisoformat(change['start'])
+
+            if change_dt <= start_dt:
+                # Add new tickers if not already in the list
+                for added_ticker in change['added']:
+                    if added_ticker not in [t[0] for t in ticker_list]:
+                        # Find industry for this ticker (fallback to 'Unknown')
+                        industry = fetch_industry(added_ticker)
+                        ticker_list.append((added_ticker, industry))
+
+                # Remove tickers that were removed before this quarter
+                ticker_list = [t for t in ticker_list if t[0] not in change['removed']]
+            elif change_dt > start_dt:
+                # Remove tickers that were added after this quarter
+                ticker_list = [t for t in ticker_list if t[0] not in change['added']]
+
         month_ret, spy_ret = screen(ticker_list, earnings, start_date, end_date)
         capital = capital + capital * month_ret / 100
         if spy_ret is not None:
