@@ -173,7 +173,7 @@ def backtest(dates):
     capital = 100000
     spy_cap = 100000
 
-    start_date="2020-01-01"
+    start_date="2019-01-01"
     end_date="2025-07-03"
 
     tickers, changes_df = gsp()  # your get_sp500_companies() wrapper

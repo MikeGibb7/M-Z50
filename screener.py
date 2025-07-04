@@ -82,6 +82,8 @@ def screen(stock_df, earnings, start, end):
                         ret = ((end_price - start_price) / start_price) * 100
                     else:
                         ret = 0
+                    
+                    yoy_eps_growth = 0
 
                     data.append({
                         'Ticker': ticker,
