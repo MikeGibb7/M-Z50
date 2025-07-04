@@ -153,7 +153,7 @@ def main():
         ("2025-04-01", "2025-06-30"),  # 2025 Q2
         ]
         print("Starting backtest...")
-        backtest()
+        backtest(dates)
         print("Backtest completed.")
     elif choice == 't':
         #######################################
@@ -165,6 +165,9 @@ def main():
         print("Starting today test...")
         backtest(dates)
         print("Today test completed.")
+    elif choice == 'q':
+        print("Exiting the program.")
+        exit(0)
     else:
         print("Invalid input. Please enter 'b' or 't'.")
 
