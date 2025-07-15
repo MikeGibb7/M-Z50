@@ -5,6 +5,7 @@ from sp_tickers import get_sp500_companies as gsp
 import yfinance as yf
 from datetime import datetime, timedelta
 from screener import screen
+from growth_screener import growth_screen
 import matplotlib.pyplot as plt
 import pandas as pd
 
@@ -115,6 +116,7 @@ def fetch_industries(ticker_list):
             info = yf.Ticker(ticker).info
             industry = info.get('industry')
         except Exception:
+            print(ticker)
             industry = 'Unknown'
         results.append((ticker, industry))
     return results
@@ -153,7 +155,7 @@ def main():
         ("2025-04-01", "2025-06-30"),  # 2025 Q2
         ]
         print("Starting backtest...")
-        backtest(dates)
+        backtest(dates, screentype='s')
         print("Backtest completed.")
     elif choice == 't':
         #######################################
@@ -163,15 +165,39 @@ def main():
         ("2025-07-02", "2025-07-03")
         ]
         print("Starting today test...")
-        backtest(dates)
+        backtest(dates, screentype='s')
         print("Today test completed.")
+    elif choice == 'g':
+        dates = [
+        ("2021-01-01", "2021-03-31"),  # 2021 Q1
+        ("2021-04-01", "2021-06-30"),  # 2021 Q2
+        ("2021-07-01", "2021-09-30"),  # 2021 Q3
+        ("2021-10-01", "2021-12-31"),  # 2021 Q4
+        ("2022-01-01", "2022-03-31"),  # 2022 Q1
+        ("2022-04-01", "2022-06-30"),  # 2022 Q2
+        ("2022-07-01", "2022-09-30"),  # 2022 Q3
+        ("2022-10-01", "2022-12-31"),  # 2022 Q4
+        ("2023-01-01", "2023-03-31"),  # 2023 Q1
+        ("2023-04-01", "2023-06-30"),  # 2023 Q2
+        ("2023-07-01", "2023-09-30"),  # 2023 Q3
+        ("2023-10-01", "2023-12-31"),  # 2023 Q4
+        ("2024-01-01", "2024-03-31"),  # 2024 Q1
+        ("2024-04-01", "2024-06-30"),  # 2024 Q2
+        ("2024-07-01", "2024-09-30"),  # 2024 Q3
+        ("2024-10-01", "2024-12-31"),  # 2024 Q4
+        ("2025-01-01", "2025-03-31"),  # 2025 Q1
+        ("2025-04-01", "2025-06-30"),  # 2025 Q2
+        ]
+        print("Starting growth screener...")
+        backtest(dates, screentype='g')
+        print("Growth screener completed.")
     elif choice == 'q':
         print("Exiting the program.")
         exit(0)
     else:
         print("Invalid input. Please enter 'b' or 't'.")
 
-def backtest(dates):
+def backtest(dates, screentype):
 
     capital = 100000
     spy_cap = 100000
@@ -239,7 +265,10 @@ def backtest(dates):
                 # Remove tickers that were added after this quarter
                 ticker_list = [t for t in ticker_list if t[0] not in change['added']]
 
-        month_ret, spy_ret = screen(ticker_list, earnings, start_date, end_date)
+        if screentype == 'g':
+            month_ret, spy_ret = growth_screen(ticker_list, earnings, start_date, end_date)
+        else:
+            month_ret, spy_ret = screen(ticker_list, earnings, start_date, end_date)
         capital = capital + capital * month_ret / 100
         if spy_ret is not None:
             spy_cap = spy_cap + spy_cap * spy_ret / 100
