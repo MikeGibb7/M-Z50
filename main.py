@@ -8,6 +8,7 @@ from screener import screen
 from growth_screener import growth_screen
 import matplotlib.pyplot as plt
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def graph_portfolio(portfolio):
     df = pd.DataFrame(portfolio)
@@ -162,7 +163,7 @@ def main():
         # ("2025-07-01", "2025-09-30"),  # 2025 Q3
         # ("2025-10-01", "2025-12-31")   # 2025 Q4
         dates = [
-        ("2025-07-02", "2025-07-03")
+        ("2025-07-02", "2025-07-16")
         ]
         print("Starting today test...")
         backtest(dates, screentype='s')
@@ -203,8 +204,10 @@ def backtest(dates, screentype):
     spy_cap = 100000
 
     start_date="2019-01-01"
-    end_date="2025-07-03"
+    end_date="2025-07-16"
 
+
+    print("Fetching S&P 500 companies...")
     tickers, changes_df = gsp()  # your get_sp500_companies() wrapper
     quarter_changes = get_quarterly_ticker_changes(changes_df, dates)
     tickers.extend([rem for q in quarter_changes for rem in q['removed']])
@@ -221,6 +224,7 @@ def backtest(dates, screentype):
             if add not in tickers:
                 tickers.append(add)
 
+    print("Fetching industries for tickers...")
     tickers = fetch_industries(tickers)
     ticker_list = []
     earnings = {}
@@ -236,8 +240,9 @@ def backtest(dates, screentype):
         # if earnings_data:
         #     for point in earnings_data:
         #         print(f"Date: {point['x']}, Estimated: {point['epsEstimated']}, Actual: {point['epsActual']}")
-    
+    print("industries fetched successfully.")
     portfolio = []
+    quarter_results = []
     portfolio.append({
         'Date': "2021-01-01",
         'Quarter Return': 0,
@@ -245,35 +250,38 @@ def backtest(dates, screentype):
         'SPY Return': 0,
         'SPY Capital': spy_cap
     })
-    for start_date, end_date in dates:
-        for change in quarter_changes:
-            
-            start_dt = datetime.fromisoformat(start_date)
-            change_dt = datetime.fromisoformat(change['start'])
+    ticker_symbols = [ticker for ticker, _ in tickers if ticker != "GOOGL"]
+    
+    histories = yf.download(ticker_symbols, start=start_date, end=end_date, group_by='ticker')
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for start_date, end_date in dates:
+            futures.append(executor.submit(
+                process_quarter,
+                start_date, end_date,
+                capital, spy_cap,
+                ticker_list.copy(),  # copy to avoid shared mutation
+                earnings,
+                histories,
+                quarter_changes,
+                screentype
+            ))
 
-            if change_dt <= start_dt:
-                # Add new tickers if not already in the list
-                for added_ticker in change['added']:
-                    if added_ticker not in [t[0] for t in ticker_list]:
-                        # Find industry for this ticker (fallback to 'Unknown')
-                        industry = fetch_industry(added_ticker)
-                        ticker_list.append((added_ticker, industry))
+        for future in as_completed(futures):
+            quarter_results.append(future.result())
 
-                # Remove tickers that were removed before this quarter
-                ticker_list = [t for t in ticker_list if t[0] not in change['removed']]
-            elif change_dt > start_dt:
-                # Remove tickers that were added after this quarter
-                ticker_list = [t for t in ticker_list if t[0] not in change['added']]
+# Step 3: Sort results by date
+    quarter_results.sort(key=lambda x: x['start'])
+    for result in quarter_results:
+        month_ret = result['month_ret']
+        spy_ret = result['spy_ret']
 
-        if screentype == 'g':
-            month_ret, spy_ret = growth_screen(ticker_list, earnings, start_date, end_date)
-        else:
-            month_ret, spy_ret = screen(ticker_list, earnings, start_date, end_date)
-        capital = capital + capital * month_ret / 100
+        capital += capital * month_ret / 100
         if spy_ret is not None:
-            spy_cap = spy_cap + spy_cap * spy_ret / 100
+            spy_cap += spy_cap * spy_ret / 100
+
         portfolio.append({
-            'Date': end_date,
+            'Date': result['end'],
             'Quarter Return': round(float(month_ret), 2),
             'Capital': round(float(capital), 2),
             'SPY Return': round(float(spy_ret), 2) if spy_ret is not None else None,
@@ -282,6 +290,39 @@ def backtest(dates, screentype):
     print(portfolio)
     graph_portfolio(portfolio)
 
+
+def process_quarter(start_date, end_date, capital, spy_cap, ticker_list, earnings, histories, quarter_changes, screentype):
+    # Make a local copy of ticker_list (to avoid race conditions)
+    local_ticker_list = ticker_list.copy()
+
+    start_dt = datetime.fromisoformat(start_date)
+    
+    for change in quarter_changes:
+        change_dt = datetime.fromisoformat(change['start'])
+
+        if change_dt <= start_dt:
+            for added_ticker in change['added']:
+                if added_ticker not in [t[0] for t in local_ticker_list]:
+                    industry = fetch_industry(added_ticker)
+                    local_ticker_list.append((added_ticker, industry))
+            local_ticker_list = [t for t in local_ticker_list if t[0] not in change['removed']]
+        elif change_dt > start_dt:
+            local_ticker_list = [t for t in local_ticker_list if t[0] not in change['added']]
+    
+    history = histories.loc[start_date:end_date]
+    
+    if screentype == 'g':
+        month_ret, spy_ret = growth_screen(local_ticker_list, earnings, start_date, end_date, history)
+    else:
+        month_ret, spy_ret = screen(local_ticker_list, earnings, start_date, end_date, history)
+
+
+    return {
+        'start': start_date,
+        'end': end_date,
+        'month_ret': month_ret,
+        'spy_ret': spy_ret
+    }
 
 
 if __name__ == "__main__":

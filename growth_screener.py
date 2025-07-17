@@ -35,7 +35,7 @@ def calculate_spy_return(start_date, end_date):
     print(f"SPY return from {start_date} to {end_date}: {spy_return}")
     return spy_return
 
-def growth_screen(stock_df, earnings, start, end):
+def growth_screen(stock_df, earnings, start, end, history):
 
     data = []
 
@@ -44,7 +44,7 @@ def growth_screen(stock_df, earnings, start, end):
     total_cap = 0
     total_ret = 0
 
-    histories = yf.download(tickers, start=start, end=end, group_by='ticker')
+    histories = history
     # stock_info = 
     for ticker, industry in stock_df:
 
