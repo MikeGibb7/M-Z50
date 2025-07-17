@@ -116,7 +116,7 @@ def fetch_industries(ticker_list):
             info = yf.Ticker(ticker).info
             industry = info.get('industry')
         except Exception:
-            print(ticker)
+            print(f"error finding industry for: {ticker}")
             industry = 'Unknown'
         results.append((ticker, industry))
     return results

@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from urllib.error import HTTPError
+from dateutil.relativedelta import relativedelta
 import time
 
 def calculate_return(stock, years):
@@ -43,8 +44,12 @@ def growth_screen(stock_df, earnings, start, end):
     iterations = 0
     total_cap = 0
     total_ret = 0
+    
+    start_dt = datetime.fromisoformat(start)
+    end_dt = datetime.fromisoformat(end)
+    extended_start = start_dt - relativedelta(months=4)
 
-    histories = yf.download(tickers, start=start, end=end, group_by='ticker')
+    histories = yf.download(tickers, start=extended_start, end=end, group_by='ticker')
     # stock_info = 
     for ticker, industry in stock_df:
 
@@ -68,14 +73,24 @@ def growth_screen(stock_df, earnings, start, end):
                 try:
                     iterations += 1
                     closes = histories[ticker]['Close'].dropna()
+                    print(closes)
 
-                    if len(closes) >=1:
-                        start_price = closes.iloc[0]
-                        pe = start_price / ttm_eps
-                        end_price = closes.iloc[-1]
-                        ret = ((end_price - start_price) / start_price) * 100
-                    else:
-                        ret = 0
+                    prev_range = closes[(closes.index >= extended_start) & (closes.index < start_dt)]
+                    curr_range = closes[(closes.index >= start_dt) & (closes.index <= end_dt)]
+                    print(f"Ticker: {ticker}, Previous Range: {prev_range}, Current Range: {curr_range}")
+                    prev_ret = 0
+                    if not prev_range.empty and len(prev_range) > 1:
+                        prev_start = prev_range.iloc[0]
+                        prev_end = prev_range.iloc[-1]
+                        prev_ret = ((prev_end - prev_start) / prev_start) * 100
+
+                    curr_ret = 0
+                    if not curr_range.empty and len(curr_range) > 1:
+                        curr_start = curr_range.iloc[0]
+                        curr_end = curr_range.iloc[-1]
+                        curr_ret = ((curr_end - curr_start) / curr_start) * 100
+
+                    pe = curr_start / ttm_eps if ttm_eps else None
                     eps_growth = None
                     if len(ttm_previous) == len(ttm_entries):
                         growth_rates = []
@@ -95,7 +110,8 @@ def growth_screen(stock_df, earnings, start, end):
                         # 'Company': info.get('shortName'),
                         # 'Sector': info.get('sector'),
                         'Industry': industry,
-                        'return' : ret,
+                        'return' : curr_ret,
+                        'Previous_ret': prev_ret,
                         # 'Market Cap': market_cap,
                         'Percent of M&Z': None,
                         'PE': pe,
@@ -110,13 +126,13 @@ def growth_screen(stock_df, earnings, start, end):
      # Apply scoring functions to each row
     df['PE_Score'] = df['PE'].apply(score_pe)
     df['EPS_Growth_Score'] = df['EPS_Growth'].apply(score_eps_growth)
-    df['Return_Score'] = df['return'].apply(score_return)
+    df['Return_Score'] = df['Previous_ret'].apply(score_return)
     
     # Calculate total score
     df['Total_Score'] = df['PE_Score'] + df['EPS_Growth_Score'] + df['Return_Score']
 
     
-    df = df[df['Total_Score'] >= 10].reset_index(drop=True)
+    # df = df[df['Total_Score'] >= 10].reset_index(drop=True) # try without
     
     # Sort by total score descending
     ranked_df = df.sort_values(by='Total_Score', ascending=False).reset_index(drop=True)
