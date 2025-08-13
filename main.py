@@ -3,11 +3,14 @@ import re
 import json
 from sp_tickers import get_sp500_companies as gsp
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+from dateutil.relativedelta import relativedelta  
 from screener import screen
 from growth_screener import growth_screen
 import matplotlib.pyplot as plt
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 def graph_portfolio(portfolio):
     df = pd.DataFrame(portfolio)
@@ -129,149 +132,149 @@ def fetch_industry(ticker):
         industry = 'Unknown'
     return industry
 
+def fetch_all_earnings(tickers, start_date, end_date, max_workers=5):
+    earnings = {}
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_ticker = {
+            executor.submit(extract_chart_data_from_url, ticker, start_date, end_date): ticker
+            for ticker, _ in tickers
+        }
+        for future in as_completed(future_to_ticker):
+            ticker = future_to_ticker[future]
+            try:
+                data = future.result()
+                earnings[ticker] = data
+            except Exception as e:
+                print(f"Error fetching {ticker}: {e}")
+    return earnings
+
+def generate_quarter_dates(years):
+    """Generate list of (start_date, end_date) tuples for last N years up to current date."""
+    today = date.today()
+    end_year = today.year
+    start_year = end_year - years + 1  # include current year
+
+    quarters = [
+        ("01-01", "03-31"),  # Q1
+        ("04-01", "06-30"),  # Q2
+        ("07-01", "09-30"),  # Q3
+        ("10-01", "12-31"),  # Q4
+    ]
+
+    dates = []
+    for year in range(start_year, end_year + 1):
+        for start_suffix, end_suffix in quarters:
+            start_date = date.fromisoformat(f"{year}-{start_suffix}")
+            end_date = date.fromisoformat(f"{year}-{end_suffix}")
+
+            # Skip if the quarter starts in the future
+            if start_date > today:
+                break  # stop processing further quarters in this year
+
+            # If quarter ends in the future, cap it at today
+            if end_date > today:
+                end_date = today
+
+            dates.append((start_date.isoformat(), end_date.isoformat()))
+    
+    return dates
+
 # Example usage
 def main():
-    choice = input("Enter 'b' for backtest or 't' for today test: ").strip().lower()
+    choice = input("Enter 'b' for backtest, 't' for today test, 'g' for growth screener: ").strip().lower()
     
     if choice == 'b':
-        dates = [
-        ("2021-01-01", "2021-03-31"),  # 2021 Q1
-        ("2021-04-01", "2021-06-30"),  # 2021 Q2
-        ("2021-07-01", "2021-09-30"),  # 2021 Q3
-        ("2021-10-01", "2021-12-31"),  # 2021 Q4
-        ("2022-01-01", "2022-03-31"),  # 2022 Q1
-        ("2022-04-01", "2022-06-30"),  # 2022 Q2
-        ("2022-07-01", "2022-09-30"),  # 2022 Q3
-        ("2022-10-01", "2022-12-31"),  # 2022 Q4
-        ("2023-01-01", "2023-03-31"),  # 2023 Q1
-        ("2023-04-01", "2023-06-30"),  # 2023 Q2
-        ("2023-07-01", "2023-09-30"),  # 2023 Q3
-        ("2023-10-01", "2023-12-31"),  # 2023 Q4
-        ("2024-01-01", "2024-03-31"),  # 2024 Q1
-        ("2024-04-01", "2024-06-30"),  # 2024 Q2
-        ("2024-07-01", "2024-09-30"),  # 2024 Q3
-        ("2024-10-01", "2024-12-31"),  # 2024 Q4
-        ("2025-01-01", "2025-03-31"),  # 2025 Q1
-        ("2025-04-01", "2025-06-30"),  # 2025 Q2
-        ]
-        print("Starting backtest...")
+        years = int(input("Enter number of years to backtest: "))
+        dates = generate_quarter_dates(years)
+        print(f"Starting {years}-year backtest...")
         backtest(dates, screentype='s')
         print("Backtest completed.")
     elif choice == 't':
-        #######################################
-        # ("2025-07-01", "2025-09-30"),  # 2025 Q3
-        # ("2025-10-01", "2025-12-31")   # 2025 Q4
-        dates = [
-        ("2025-07-02", "2025-07-03")
-        ]
+        dates = [(date.today().isoformat(), date.today().isoformat())]
         print("Starting today test...")
         backtest(dates, screentype='s')
         print("Today test completed.")
     elif choice == 'g':
-        dates = [
-        ("2021-01-01", "2021-03-31"),  # 2021 Q1
-        ("2021-04-01", "2021-06-30"),  # 2021 Q2
-        ("2021-07-01", "2021-09-30"),  # 2021 Q3
-        ("2021-10-01", "2021-12-31"),  # 2021 Q4
-        ("2022-01-01", "2022-03-31"),  # 2022 Q1
-        ("2022-04-01", "2022-06-30"),  # 2022 Q2
-        ("2022-07-01", "2022-09-30"),  # 2022 Q3
-        ("2022-10-01", "2022-12-31"),  # 2022 Q4
-        ("2023-01-01", "2023-03-31"),  # 2023 Q1
-        ("2023-04-01", "2023-06-30"),  # 2023 Q2
-        ("2023-07-01", "2023-09-30"),  # 2023 Q3
-        ("2023-10-01", "2023-12-31"),  # 2023 Q4
-        ("2024-01-01", "2024-03-31"),  # 2024 Q1
-        ("2024-04-01", "2024-06-30"),  # 2024 Q2
-        ("2024-07-01", "2024-09-30"),  # 2024 Q3
-        ("2024-10-01", "2024-12-31"),  # 2024 Q4
-        ("2025-01-01", "2025-03-31"),  # 2025 Q1
-        ("2025-04-01", "2025-06-30"),  # 2025 Q2
-        ]
-        print("Starting growth screener...")
-        backtest(dates, screentype='g')
+        years = int(input("Enter number of years for growth screener: "))
+        dates = generate_quarter_dates(years)
+        print(f"Starting {years}-year growth screener...")
+        backtest(dates, screentype='g', years=years)
         print("Growth screener completed.")
     elif choice == 'q':
         print("Exiting the program.")
         exit(0)
     else:
-        print("Invalid input. Please enter 'b' or 't'.")
+        print("Invalid input. Please enter 'b', 't', 'g', or 'q'.")
 
-def backtest(dates, screentype):
-
+def backtest(dates, screentype, years):
     capital = 100000
     spy_cap = 100000
 
-    start_date="2019-01-01"
-    end_date="2025-07-03"
+    today = date.today()
 
-    tickers, changes_df = gsp()  # your get_sp500_companies() wrapper
+    # Earnings start date = 1 year before the user's range
+    earnings_start = (today - relativedelta(years=years+1)).isoformat()
+    earnings_end = today.isoformat()
+
+    tickers, changes_df = gsp()
     quarter_changes = get_quarterly_ticker_changes(changes_df, dates)
-    tickers.extend([rem for q in quarter_changes for rem in q['removed']])
-    
-    # Add removed tickers if not already in the list
+
+    # Add removed tickers
     for q in quarter_changes:
         for rem in q['removed']:
             if rem not in tickers:
                 tickers.append(rem)
 
-    # Add added tickers if not already in the list
+    # Add added tickers
     for q in quarter_changes:
         for add in q['added']:
             if add not in tickers:
                 tickers.append(add)
 
     tickers = fetch_industries(tickers)
-    ticker_list = []
-    earnings = {}
-    
-    for ticker, industry in tickers:
-        if ticker != "GOOGL":
-            earnings_data = extract_chart_data_from_url(ticker, start_date, end_date)
-            earnings[ticker] = earnings_data
-            if earnings_data:
-                ticker_list.append((ticker, industry))
-        # dates = earnings_data['x']
-        
-        # if earnings_data:
-        #     for point in earnings_data:
-        #         print(f"Date: {point['x']}, Estimated: {point['epsEstimated']}, Actual: {point['epsActual']}")
-    
-    portfolio = []
-    portfolio.append({
-        'Date': "2021-01-01",
+
+    if "GOOGL" in [t[0] for t in tickers]:
+        tickers = [(t, ind) for t, ind in tickers if t != "GOOGL"]
+
+    # Fetch earnings with multithreading
+    earnings = fetch_all_earnings(tickers, earnings_start, earnings_end, max_workers=5)
+
+    ticker_list = [(t, ind) for t, ind in tickers if earnings.get(t)]
+
+    # Portfolio initial point: start of user's range
+    first_portfolio_date = (today - relativedelta(years=years)).replace(month=1, day=1).isoformat()
+
+    portfolio = [{
+        'Date': first_portfolio_date,
         'Quarter Return': 0,
         'Capital': capital,
         'SPY Return': 0,
         'SPY Capital': spy_cap
-    })
+    }]
+
     for start_date, end_date in dates:
         for change in quarter_changes:
-            
             start_dt = datetime.fromisoformat(start_date)
             change_dt = datetime.fromisoformat(change['start'])
 
             if change_dt <= start_dt:
-                # Add new tickers if not already in the list
                 for added_ticker in change['added']:
                     if added_ticker not in [t[0] for t in ticker_list]:
-                        # Find industry for this ticker (fallback to 'Unknown')
                         industry = fetch_industry(added_ticker)
                         ticker_list.append((added_ticker, industry))
-
-                # Remove tickers that were removed before this quarter
                 ticker_list = [t for t in ticker_list if t[0] not in change['removed']]
             elif change_dt > start_dt:
-                # Remove tickers that were added after this quarter
                 ticker_list = [t for t in ticker_list if t[0] not in change['added']]
 
         if screentype == 'g':
             month_ret, spy_ret = growth_screen(ticker_list, earnings, start_date, end_date)
         else:
             month_ret, spy_ret = screen(ticker_list, earnings, start_date, end_date)
-        capital = capital + capital * month_ret / 100
+
+        capital += capital * month_ret / 100
         if spy_ret is not None:
-            spy_cap = spy_cap + spy_cap * spy_ret / 100
+            spy_cap += spy_cap * spy_ret / 100
+
         portfolio.append({
             'Date': end_date,
             'Quarter Return': round(float(month_ret), 2),
@@ -279,6 +282,7 @@ def backtest(dates, screentype):
             'SPY Return': round(float(spy_ret), 2) if spy_ret is not None else None,
             'SPY Capital': round(float(spy_cap), 2)
         })
+
     print(portfolio)
     graph_portfolio(portfolio)
 

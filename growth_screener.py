@@ -44,11 +44,10 @@ def growth_screen(stock_df, earnings, start, end):
     iterations = 0
     total_cap = 0
     total_ret = 0
-    
-    start_dt = datetime.fromisoformat(start)
-    end_dt = datetime.fromisoformat(end)
-    extended_start = start_dt - relativedelta(months=4)
 
+    start_dt = datetime.fromisoformat(start)
+    extended_start_dt = start_dt - relativedelta(months=4)
+    extended_start = extended_start_dt.strftime('%Y-%m-%d')
     histories = yf.download(tickers, start=extended_start, end=end, group_by='ticker')
     # stock_info = 
     for ticker, industry in stock_df:
@@ -73,24 +72,28 @@ def growth_screen(stock_df, earnings, start, end):
                 try:
                     iterations += 1
                     closes = histories[ticker]['Close'].dropna()
-                    print(closes)
 
-                    prev_range = closes[(closes.index >= extended_start) & (closes.index < start_dt)]
-                    curr_range = closes[(closes.index >= start_dt) & (closes.index <= end_dt)]
-                    print(f"Ticker: {ticker}, Previous Range: {prev_range}, Current Range: {curr_range}")
-                    prev_ret = 0
-                    if not prev_range.empty and len(prev_range) > 1:
-                        prev_start = prev_range.iloc[0]
-                        prev_end = prev_range.iloc[-1]
-                        prev_ret = ((prev_end - prev_start) / prev_start) * 100
+                    end_dt = datetime.fromisoformat(end)
+                    curr_quarter_data = closes[(closes.index >= start_dt) & (closes.index < end_dt)]
 
-                    curr_ret = 0
-                    if not curr_range.empty and len(curr_range) > 1:
-                        curr_start = curr_range.iloc[0]
-                        curr_end = curr_range.iloc[-1]
-                        curr_ret = ((curr_end - curr_start) / curr_start) * 100
+                    if len(curr_quarter_data) >= 2:
+                        start_price = curr_quarter_data.iloc[0]
+                        end_price = curr_quarter_data.iloc[-1]
+                        pe = start_price / ttm_eps
+                        ret = ((end_price - start_price) / start_price) * 100
+                    else:
+                        pe = None
+                        ret = 0
+                    prev_quarter_start = start_dt - relativedelta(months=3)
+                    prev_quarter_end = start_dt
+                    prev_quarter_data = closes[(closes.index >= prev_quarter_start) & (closes.index < prev_quarter_end)]
 
-                    pe = curr_start / ttm_eps if ttm_eps else None
+                    if len(prev_quarter_data) >= 2:
+                        prev_start_price = prev_quarter_data.iloc[0]
+                        prev_end_price = prev_quarter_data.iloc[-1]
+                        prev_quarter_return = ((prev_end_price - prev_start_price) / prev_start_price) * 100
+                    else:
+                        prev_quarter_return = None
                     eps_growth = None
                     if len(ttm_previous) == len(ttm_entries):
                         growth_rates = []
@@ -110,13 +113,13 @@ def growth_screen(stock_df, earnings, start, end):
                         # 'Company': info.get('shortName'),
                         # 'Sector': info.get('sector'),
                         'Industry': industry,
-                        'return' : curr_ret,
-                        'Previous_ret': prev_ret,
+                        'return' : ret,
                         # 'Market Cap': market_cap,
                         'Percent of M&Z': None,
                         'PE': pe,
                         'TTM_EPS': ttm_eps,
-                        'EPS_Growth': eps_growth
+                        'EPS_Growth': eps_growth,
+                        'return_prev': prev_quarter_return
                     })
                     # time.sleep(0.05)
                 except Exception as e:
@@ -126,13 +129,14 @@ def growth_screen(stock_df, earnings, start, end):
      # Apply scoring functions to each row
     df['PE_Score'] = df['PE'].apply(score_pe)
     df['EPS_Growth_Score'] = df['EPS_Growth'].apply(score_eps_growth)
-    df['Return_Score'] = df['Previous_ret'].apply(score_return)
+    
+    df['Return_Score'] = df['return_prev'].apply(score_return)
     
     # Calculate total score
     df['Total_Score'] = df['PE_Score'] + df['EPS_Growth_Score'] + df['Return_Score']
 
     
-    # df = df[df['Total_Score'] >= 10].reset_index(drop=True) # try without
+    # df = df[df['Total_Score'] >= 10].reset_index(drop=True)
     
     # Sort by total score descending
     ranked_df = df.sort_values(by='Total_Score', ascending=False).reset_index(drop=True)
@@ -154,13 +158,13 @@ def growth_screen(stock_df, earnings, start, end):
 
 def score_pe(pe):
     if pe <= 10:
-        return 10
+        return 5
     elif pe <= 20:
-        return 8
-    elif pe <= 30:
-        return 6
-    elif pe <= 40:
         return 4
+    elif pe <= 30:
+        return 3
+    elif pe <= 40:
+        return 2
     else:
         return 1
 
@@ -187,9 +191,11 @@ def score_return(ret):
         return 3
     elif ret > 0:
         return 2
+    elif ret < -20:
+        return -3
+    elif ret < -10:
+        return -2
+    elif ret < -5:
+        return 1
     else:
         return 1
-
-   
-
-    
