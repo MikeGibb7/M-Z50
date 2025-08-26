@@ -1,61 +1,110 @@
-# M&Z50 Custom Index
+# M-Z50 Portfolio Screening and Backtesting System
 
-A Python script that builds a custom index called the M&Z50, which includes the best stock from each industry in the S&P 500 based on fundamental analysis.
+A comprehensive portfolio screening and backtesting system that analyzes S&P 500 stocks based on fundamental metrics and historical performance.
 
 ## Features
 
-- **Fundamental Screening**: Selects stocks based on low P/E ratio, high ROE, and low Debt/Equity ratio
-- **Industry Diversification**: Picks the best stock from each major industry sector
-- **Quarterly Rebalancing**: Rebalances the portfolio every quarter
-- **Market Cap Weighting**: Weights selected stocks by market capitalization
-- **Performance Comparison**: Compares performance against SPY (S&P 500 ETF)
-- **Visualization**: Plots both portfolios on a graph with rebalancing dates marked
+- **Portfolio Screening**: Screen stocks based on PE ratios, EPS growth, and historical returns
+- **Growth Screening**: Advanced screening with EPS growth analysis and quarterly performance
+- **Backtesting**: Historical performance analysis of screened portfolios vs. SPY benchmark
+- **Multi-threaded Data Fetching**: Efficient data collection from multiple sources
+- **Industry-based Selection**: Select best stocks from each industry for diversification
 
-## Requirements
+## Installation
 
-Install the required dependencies:
-
+1. Clone the repository
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
 ## Usage
 
-Run the script:
-
+### Main Program
+Run the interactive main program:
 ```bash
-python zarektest.py
+python main.py
 ```
 
-## How It Works
+Choose from the following options:
+- **b**: Backtest - Run a multi-year backtest
+- **t**: Today Test - Test with today's data
+- **g**: Growth Screener - Use growth-based screening
+- **q**: Quit
 
-1. **Stock Selection**: The script screens stocks from major S&P 500 companies across different industries
-2. **Fundamental Analysis**: For each industry, it selects the stock with the best combination of:
-   - Low Price-to-Earnings (P/E) ratio
-   - High Return on Equity (ROE)
-   - Low Debt-to-Equity ratio
-3. **Portfolio Construction**: Selected stocks are weighted by market capitalization
-4. **Quarterly Rebalancing**: The portfolio is rebalanced every quarter (January, April, July, October)
-5. **Performance Tracking**: Tracks performance over 5 years starting with $100,000
-6. **Comparison**: Compares results against SPY performance
+### Testing
+Run the test suite to verify functionality:
+```bash
+python test_run.py
+```
 
-## Output
+### Demo
+Run the automated demo to see both screening methods in action:
+```bash
+python demo.py
+```
 
-The script will:
-- Print screening results for each rebalancing period
-- Show portfolio allocations
-- Display a performance comparison chart
-- Print a summary of returns and excess performance
+**Note**: The demo script will take several minutes to complete as it fetches real market data and performs actual screening and backtesting.
 
-## Customization
+## System Architecture
 
-You can modify the script to:
-- Change the initial investment amount
-- Adjust the screening criteria
-- Modify the rebalancing frequency
-- Add more industries or stocks
-- Change the backtest period
+### Core Components
 
-## Disclaimer
+1. **`main.py`** - Main program interface and user interaction
+2. **`portfolio.py`** - Portfolio generation and management
+3. **`screener.py`** - Standard stock screening based on PE, EPS, and returns
+4. **`growth_screener.py`** - Advanced screening with growth metrics
+5. **`backtest.py`** - Historical performance analysis
+6. **`fetch_functions.py`** - Data fetching utilities
+7. **`sp_tickers.py`** - S&P 500 ticker management
 
-This is for educational and research purposes only. Past performance does not guarantee future results. Always do your own research before making investment decisions. 
+### Data Flow
+
+1. **Data Collection**: Fetch S&P 500 tickers and industry classifications
+2. **Earnings Data**: Collect quarterly earnings data for all tickers
+3. **Screening**: Apply scoring algorithms to rank stocks
+4. **Portfolio Construction**: Select top stocks from each industry
+5. **Backtesting**: Calculate historical returns vs. SPY benchmark
+
+## Screening Criteria
+
+### Standard Screener
+- **PE Score**: Lower PE ratios get higher scores (1-5)
+- **EPS Growth Score**: Higher EPS growth gets higher scores (1-5)
+- **Return Score**: Higher historical returns get higher scores (1-5)
+
+### Growth Screener
+- **PE Score**: Lower PE ratios get higher scores (1-5)
+- **EPS Growth Score**: Higher EPS growth rates get higher scores (1-5)
+- **Previous Quarter Return**: Higher previous quarter returns get higher scores (1-5)
+
+## Error Handling
+
+The system includes robust error handling:
+- Fallback stock lists if S&P 500 data is unavailable
+- Graceful handling of missing earnings data
+- Error recovery for individual ticker failures
+- Comprehensive logging of issues
+
+## Dependencies
+
+- `yfinance`: Yahoo Finance data access
+- `pandas`: Data manipulation and analysis
+- `matplotlib`: Charting and visualization
+- `requests`: HTTP requests for data fetching
+- `python-dateutil`: Date manipulation utilities
+
+## Notes
+
+- The system uses fallback stock lists if Wikipedia S&P 500 data is unavailable
+- Earnings data is fetched from AlphaQuery with rate limiting
+- All calculations are done with proper error handling and fallbacks
+- The system is designed to be robust and handle real-world data inconsistencies
+
+## Troubleshooting
+
+If you encounter issues:
+1. Run `python test_run.py` to identify specific problems
+2. Check your internet connection for data fetching
+3. Verify all dependencies are installed correctly
+4. Check the console output for specific error messages 

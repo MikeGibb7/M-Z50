@@ -153,7 +153,14 @@ def growth_screen(stock_df, earnings, start, end):
     spy_ret = calculate_spy_return(start, end)
     # print(f"Our Return: {total_ret}")
 
-    return total_ret, spy_ret
+    # Create portfolio from screened stocks
+    portfolio = []
+    for _, row in df.iterrows():
+        ticker = row['Ticker']
+        weight = row['Percent of M&Z']
+        portfolio.append((ticker, weight))
+
+    return portfolio, total_ret, spy_ret
 
 
 def score_pe(pe):
