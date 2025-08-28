@@ -119,10 +119,10 @@ def screen(stock_df, earnings, start, end):
      # Apply scoring functions to each row
     df['PE_Score'] = df['PE'].apply(score_pe)
     df['EPS_Growth_Score'] = df['TTM_EPS'].apply(score_eps_growth)
-    df['Return_Score'] = df['return'].apply(score_return)
+    # df['Return_Score'] = df['return'].apply(score_return)
     
     # Calculate total score
-    df['Total_Score'] = df['PE_Score'] + df['EPS_Growth_Score'] + df['Return_Score']
+    df['Total_Score'] = df['PE_Score'] + df['EPS_Growth_Score'] #+ df['Return_Score']
     
     # Sort by total score descending
     ranked_df = df.sort_values(by='Total_Score', ascending=False).reset_index(drop=True)
